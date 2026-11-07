@@ -1,0 +1,489 @@
+blueprint:
+  name: Raum-Heizung (Zeitfenster, Fenster, Außentemperatur)
+  description: >
+    Steuert die Heizung **eines Raums**. Bei jedem Auslöser wird neu entschieden,
+    was gerade gelten soll – in dieser Reihenfolge:
+
+
+    1. Hauptschalter aus → Regler aus (oder nichts tun, einstellbar)
+
+    2. Ein Fenster offen → Regler aus
+
+    3. Draußen so warm wie der Grenzwert oder wärmer → Regler aus
+
+    4. Ein aktives Zeitfenster passt (Uhrzeit + Wochentag) → heizen mit dessen Temperatur
+
+    5. Sonst → Regler aus oder Absenktemperatur (einstellbar)
+
+
+    Wenn das Fenster wieder zu ist, gilt sofort wieder, was der Zeitplan vorsieht.
+    Befehle werden nur geschickt, wenn sich am Regler wirklich etwas ändert.
+    Ist die Außentemperatur nicht verfügbar, wird nach Zeitplan geheizt.
+
+
+    Version 1.0.0 – https://github.com/CrazyJimPro/ha-heizung
+  domain: automation
+  author: CrazyJimPro
+  source_url: https://github.com/CrazyJimPro/ha-heizung/blob/main/blueprints/automation/crazyjimpro/raum_heizung.yaml
+  homeassistant:
+    min_version: "2025.4.0"
+  input:
+    raum:
+      name: Raum
+      icon: mdi:radiator
+      input:
+        regler:
+          name: Heizungsregler
+          description: Der Thermostat bzw. Regler dieses Raums.
+          selector:
+            entity:
+              filter:
+                - domain: climate
+        fenster:
+          name: Fensterkontakte
+          description: Ein oder mehrere Fenster/Türen. Ist eins davon offen, geht die Heizung aus.
+          selector:
+            entity:
+              multiple: true
+              filter:
+                - domain: binary_sensor
+                  device_class: window
+                - domain: binary_sensor
+                  device_class: door
+                - domain: binary_sensor
+                  device_class: opening
+        fenster_verzoegerung:
+          name: Verzögerung „Fenster offen“
+          description: So lange muss ein Fenster offen sein, bevor die Heizung ausgeht. 0 = sofort.
+          default:
+            hours: 0
+            minutes: 0
+            seconds: 0
+          selector:
+            duration: {}
+
+    freigabe:
+      name: Hauptschalter
+      icon: mdi:toggle-switch
+      input:
+        hauptschalter:
+          name: Hauptschalter (Heizmodus)
+          description: Nur wenn dieser Schalter an ist, wird nach Zeitplan geheizt.
+          selector:
+            entity:
+              filter:
+                - domain: input_boolean
+        bei_hauptschalter_aus:
+          name: Wenn der Hauptschalter aus ist
+          description: >
+            „Regler ausschalten“: Der Regler wird ausgeschaltet und bleibt aus.
+            „Nichts tun“: Die Automation lässt den Regler in Ruhe (z. B. für Handbetrieb).
+          default: aus
+          selector:
+            select:
+              options:
+                - label: Regler ausschalten
+                  value: aus
+                - label: Nichts tun
+                  value: nichts
+
+    aussen:
+      name: Außentemperatur
+      icon: mdi:thermometer
+      input:
+        aussen_sensor:
+          name: Außentemperatur-Sensor
+          selector:
+            entity:
+              filter:
+                - domain: sensor
+                  device_class: temperature
+        aussen_grenze:
+          name: Grenzwert
+          description: Ab dieser Außentemperatur (und wärmer) bleibt die Heizung aus.
+          default: 20
+          selector:
+            number:
+              min: 0
+              max: 30
+              step: 0.5
+              unit_of_measurement: "°C"
+              mode: box
+
+    zeitfenster_1:
+      name: Zeitfenster 1
+      icon: mdi:clock-outline
+      input:
+        zf1_aktiv: &aktiv
+          name: Aktiv
+          default: false
+          selector:
+            boolean: {}
+        zf1_start:
+          name: Von
+          default: "06:00:00"
+          selector:
+            time: {}
+        zf1_ende:
+          name: Bis
+          description: Liegt „Bis“ vor „Von“, läuft das Zeitfenster über Mitternacht.
+          default: "08:00:00"
+          selector:
+            time: {}
+        zf1_tage: &tage
+          name: Wochentage
+          description: Bei Zeitfenstern über Mitternacht zählt der Wochentag des jeweiligen Tages.
+          default: [mon, tue, wed, thu, fri, sat, sun]
+          selector:
+            select:
+              multiple: true
+              options:
+                - label: Montag
+                  value: mon
+                - label: Dienstag
+                  value: tue
+                - label: Mittwoch
+                  value: wed
+                - label: Donnerstag
+                  value: thu
+                - label: Freitag
+                  value: fri
+                - label: Samstag
+                  value: sat
+                - label: Sonntag
+                  value: sun
+        zf1_temp: &temp
+          name: Temperatur
+          default: 21
+          selector:
+            number:
+              min: 5
+              max: 30
+              step: 0.5
+              unit_of_measurement: "°C"
+              mode: box
+
+    zeitfenster_2:
+      name: Zeitfenster 2
+      icon: mdi:clock-outline
+      collapsed: true
+      input:
+        zf2_aktiv: *aktiv
+        zf2_start:
+          name: Von
+          default: "08:00:00"
+          selector:
+            time: {}
+        zf2_ende:
+          name: Bis
+          default: "12:00:00"
+          selector:
+            time: {}
+        zf2_tage: *tage
+        zf2_temp: *temp
+
+    zeitfenster_3:
+      name: Zeitfenster 3
+      icon: mdi:clock-outline
+      collapsed: true
+      input:
+        zf3_aktiv: *aktiv
+        zf3_start:
+          name: Von
+          default: "12:00:00"
+          selector:
+            time: {}
+        zf3_ende:
+          name: Bis
+          default: "17:00:00"
+          selector:
+            time: {}
+        zf3_tage: *tage
+        zf3_temp: *temp
+
+    zeitfenster_4:
+      name: Zeitfenster 4
+      icon: mdi:clock-outline
+      collapsed: true
+      input:
+        zf4_aktiv: *aktiv
+        zf4_start:
+          name: Von
+          default: "17:00:00"
+          selector:
+            time: {}
+        zf4_ende:
+          name: Bis
+          default: "20:00:00"
+          selector:
+            time: {}
+        zf4_tage: *tage
+        zf4_temp: *temp
+
+    zeitfenster_5:
+      name: Zeitfenster 5
+      icon: mdi:clock-outline
+      collapsed: true
+      input:
+        zf5_aktiv: *aktiv
+        zf5_start:
+          name: Von
+          default: "20:00:00"
+          selector:
+            time: {}
+        zf5_ende:
+          name: Bis
+          default: "22:00:00"
+          selector:
+            time: {}
+        zf5_tage: *tage
+        zf5_temp: *temp
+
+    zeitfenster_6:
+      name: Zeitfenster 6
+      icon: mdi:clock-outline
+      collapsed: true
+      input:
+        zf6_aktiv: *aktiv
+        zf6_start:
+          name: Von
+          default: "22:00:00"
+          selector:
+            time: {}
+        zf6_ende:
+          name: Bis
+          default: "06:00:00"
+          selector:
+            time: {}
+        zf6_tage: *tage
+        zf6_temp: *temp
+
+    ausserhalb:
+      name: Außerhalb der Zeitfenster
+      icon: mdi:weather-night
+      collapsed: true
+      input:
+        ausserhalb_modus:
+          name: Verhalten
+          default: aus
+          selector:
+            select:
+              options:
+                - label: Regler ausschalten
+                  value: aus
+                - label: Absenktemperatur halten
+                  value: absenken
+        absenk_temp:
+          name: Absenktemperatur
+          default: 17
+          selector:
+            number:
+              min: 5
+              max: 30
+              step: 0.5
+              unit_of_measurement: "°C"
+              mode: box
+
+mode: restart
+max_exceeded: silent
+
+variables:
+  regler: !input regler
+  bei_hauptschalter_aus: !input bei_hauptschalter_aus
+  ausserhalb_modus: !input ausserhalb_modus
+  absenk_temp: !input absenk_temp
+  zf1_aktiv: !input zf1_aktiv
+  zf2_aktiv: !input zf2_aktiv
+  zf3_aktiv: !input zf3_aktiv
+  zf4_aktiv: !input zf4_aktiv
+  zf5_aktiv: !input zf5_aktiv
+  zf6_aktiv: !input zf6_aktiv
+  zf1_temp: !input zf1_temp
+  zf2_temp: !input zf2_temp
+  zf3_temp: !input zf3_temp
+  zf4_temp: !input zf4_temp
+  zf5_temp: !input zf5_temp
+  zf6_temp: !input zf6_temp
+  # Wird in den Zweigen unten gesetzt: "off", "heat" oder "nichts"
+  ziel_modus: nichts
+  ziel_temp: 0
+  ziel_grund: ""
+
+triggers:
+  - trigger: state
+    entity_id: !input fenster
+    to: "on"
+    for: !input fenster_verzoegerung
+    id: fenster_auf
+  - trigger: state
+    entity_id: !input fenster
+    to: "off"
+    id: fenster_zu
+  - trigger: state
+    entity_id: !input hauptschalter
+    to: ["on", "off"]
+    id: hauptschalter
+  - trigger: numeric_state
+    entity_id: !input aussen_sensor
+    below: !input aussen_grenze
+    id: aussen_kalt
+  - trigger: numeric_state
+    entity_id: !input aussen_sensor
+    above: !input aussen_grenze
+    id: aussen_warm
+  - trigger: state
+    entity_id: !input regler
+    from: ["unavailable", "unknown"]
+    id: regler_wieder_da
+  - trigger: homeassistant
+    event: start
+    id: ha_start
+  - { trigger: time, at: !input zf1_start, enabled: !input zf1_aktiv, id: zf1_start }
+  - { trigger: time, at: !input zf1_ende, enabled: !input zf1_aktiv, id: zf1_ende }
+  - { trigger: time, at: !input zf2_start, enabled: !input zf2_aktiv, id: zf2_start }
+  - { trigger: time, at: !input zf2_ende, enabled: !input zf2_aktiv, id: zf2_ende }
+  - { trigger: time, at: !input zf3_start, enabled: !input zf3_aktiv, id: zf3_start }
+  - { trigger: time, at: !input zf3_ende, enabled: !input zf3_aktiv, id: zf3_ende }
+  - { trigger: time, at: !input zf4_start, enabled: !input zf4_aktiv, id: zf4_start }
+  - { trigger: time, at: !input zf4_ende, enabled: !input zf4_aktiv, id: zf4_ende }
+  - { trigger: time, at: !input zf5_start, enabled: !input zf5_aktiv, id: zf5_start }
+  - { trigger: time, at: !input zf5_ende, enabled: !input zf5_aktiv, id: zf5_ende }
+  - { trigger: time, at: !input zf6_start, enabled: !input zf6_aktiv, id: zf6_start }
+  - { trigger: time, at: !input zf6_ende, enabled: !input zf6_aktiv, id: zf6_ende }
+
+conditions: []
+
+actions:
+  - alias: Sollzustand bestimmen
+    choose:
+      - alias: Hauptschalter aus
+        conditions:
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: !input hauptschalter
+                state: "on"
+        sequence:
+          - variables:
+              ziel_modus: "{{ 'off' if bei_hauptschalter_aus == 'aus' else 'nichts' }}"
+              ziel_grund: Hauptschalter aus
+      - alias: Fenster offen
+        conditions:
+          - condition: state
+            entity_id: !input fenster
+            match: any
+            state: "on"
+            for: !input fenster_verzoegerung
+        sequence:
+          - variables:
+              ziel_modus: "off"
+              ziel_grund: Fenster offen
+      - alias: Draußen warm genug
+        conditions:
+          - condition: not
+            conditions:
+              - condition: or
+                conditions:
+                  - condition: numeric_state
+                    entity_id: !input aussen_sensor
+                    below: !input aussen_grenze
+                  - condition: state
+                    entity_id: !input aussen_sensor
+                    state: ["unavailable", "unknown"]
+        sequence:
+          - variables:
+              ziel_modus: "off"
+              ziel_grund: Draußen warm genug
+      - alias: Zeitfenster 1
+        conditions:
+          - condition: template
+            value_template: "{{ zf1_aktiv }}"
+          - condition: time
+            after: !input zf1_start
+            before: !input zf1_ende
+            weekday: !input zf1_tage
+        sequence:
+          - variables: { ziel_modus: heat, ziel_temp: "{{ zf1_temp }}", ziel_grund: Zeitfenster 1 }
+      - alias: Zeitfenster 2
+        conditions:
+          - condition: template
+            value_template: "{{ zf2_aktiv }}"
+          - condition: time
+            after: !input zf2_start
+            before: !input zf2_ende
+            weekday: !input zf2_tage
+        sequence:
+          - variables: { ziel_modus: heat, ziel_temp: "{{ zf2_temp }}", ziel_grund: Zeitfenster 2 }
+      - alias: Zeitfenster 3
+        conditions:
+          - condition: template
+            value_template: "{{ zf3_aktiv }}"
+          - condition: time
+            after: !input zf3_start
+            before: !input zf3_ende
+            weekday: !input zf3_tage
+        sequence:
+          - variables: { ziel_modus: heat, ziel_temp: "{{ zf3_temp }}", ziel_grund: Zeitfenster 3 }
+      - alias: Zeitfenster 4
+        conditions:
+          - condition: template
+            value_template: "{{ zf4_aktiv }}"
+          - condition: time
+            after: !input zf4_start
+            before: !input zf4_ende
+            weekday: !input zf4_tage
+        sequence:
+          - variables: { ziel_modus: heat, ziel_temp: "{{ zf4_temp }}", ziel_grund: Zeitfenster 4 }
+      - alias: Zeitfenster 5
+        conditions:
+          - condition: template
+            value_template: "{{ zf5_aktiv }}"
+          - condition: time
+            after: !input zf5_start
+            before: !input zf5_ende
+            weekday: !input zf5_tage
+        sequence:
+          - variables: { ziel_modus: heat, ziel_temp: "{{ zf5_temp }}", ziel_grund: Zeitfenster 5 }
+      - alias: Zeitfenster 6
+        conditions:
+          - condition: template
+            value_template: "{{ zf6_aktiv }}"
+          - condition: time
+            after: !input zf6_start
+            before: !input zf6_ende
+            weekday: !input zf6_tage
+        sequence:
+          - variables: { ziel_modus: heat, ziel_temp: "{{ zf6_temp }}", ziel_grund: Zeitfenster 6 }
+    default:
+      - variables:
+          ziel_modus: "{{ 'heat' if ausserhalb_modus == 'absenken' else 'off' }}"
+          ziel_temp: "{{ absenk_temp }}"
+          ziel_grund: Außerhalb der Zeitfenster
+
+  - alias: Regler nur ändern, wenn nötig
+    choose:
+      - alias: Ausschalten
+        conditions:
+          - condition: template
+            value_template: "{{ ziel_modus == 'off' and states(regler) != 'off' }}"
+        sequence:
+          - action: climate.set_hvac_mode
+            target:
+              entity_id: !input regler
+            data:
+              hvac_mode: "off"
+      - alias: Heizen mit Solltemperatur
+        conditions:
+          - condition: template
+            value_template: >
+              {{ ziel_modus == 'heat' and (
+                   states(regler) != 'heat'
+                   or state_attr(regler, 'temperature') | float(-1) != ziel_temp | float(0)
+                 ) }}
+        sequence:
+          - action: climate.set_temperature
+            target:
+              entity_id: !input regler
+            data:
+              hvac_mode: heat
+              temperature: "{{ ziel_temp | float }}"
