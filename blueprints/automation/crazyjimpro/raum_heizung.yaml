@@ -13,7 +13,7 @@ blueprint:
 
     4. Ein aktives Zeitfenster passt (Uhrzeit + Wochentag) → heizen mit dessen Temperatur
 
-    5. Sonst → Regler aus oder Absenktemperatur (einstellbar)
+    5. Sonst → Regler aus, Absenktemperatur oder nicht eingreifen (einstellbar)
 
 
     Wenn das Fenster wieder zu ist, gilt sofort wieder, was der Zeitplan vorsieht.
@@ -21,7 +21,12 @@ blueprint:
     Ist die Außentemperatur nicht verfügbar, wird nach Zeitplan geheizt.
 
 
-    Version 1.0.0 – https://github.com/CrazyJimPro/ha-heizung
+    Handbetrieb („Nicht eingreifen“): Außerhalb der Zeitfenster bleibt der Regler,
+    wie er von Hand eingestellt ist. Fenster, Hauptschalter und Außentemperatur
+    schalten ihn trotzdem aus; danach wird der vorherige Zustand wiederhergestellt.
+
+
+    Version 1.1.0 – https://github.com/CrazyJimPro/ha-heizung
   domain: automation
   author: CrazyJimPro
   source_url: https://github.com/CrazyJimPro/ha-heizung/blob/main/blueprints/automation/crazyjimpro/raum_heizung.yaml
@@ -265,6 +270,11 @@ blueprint:
       input:
         ausserhalb_modus:
           name: Verhalten
+          description: >
+            „Nicht eingreifen“ ist für Räume, die von Hand geregelt werden: Die
+            Automation lässt den Regler dann in Ruhe. Schaltet ein Fenster, der
+            Hauptschalter oder die Außentemperatur den Regler aus, wird danach der
+            vorherige Zustand wiederhergestellt (nicht über einen HA-Neustart hinweg).
           default: aus
           selector:
             select:
@@ -273,6 +283,8 @@ blueprint:
                   value: aus
                 - label: Absenktemperatur halten
                   value: absenken
+                - label: Nicht eingreifen (Handbetrieb)
+                  value: manuell
         absenk_temp:
           name: Absenktemperatur
           default: 17
@@ -308,6 +320,9 @@ variables:
   ziel_modus: nichts
   ziel_temp: 0
   ziel_grund: ""
+  # Handbetrieb: Zustand vor dem Ausschalten, als Szene pro Automation
+  snapshot_id: "raum_heizung_{{ this.entity_id.split('.')[1] }}"
+  snapshot_szene: "scene.{{ snapshot_id }}"
 
 triggers:
   - trigger: state
@@ -456,7 +471,8 @@ actions:
           - variables: { ziel_modus: heat, ziel_temp: "{{ zf6_temp }}", ziel_grund: Zeitfenster 6 }
     default:
       - variables:
-          ziel_modus: "{{ 'heat' if ausserhalb_modus == 'absenken' else 'off' }}"
+          ziel_modus: >
+            {{ {'absenken': 'heat', 'manuell': 'nichts'}.get(ausserhalb_modus, 'off') }}
           ziel_temp: "{{ absenk_temp }}"
           ziel_grund: Außerhalb der Zeitfenster
 
@@ -467,6 +483,15 @@ actions:
           - condition: template
             value_template: "{{ ziel_modus == 'off' and states(regler) != 'off' }}"
         sequence:
+          - if:
+              - condition: template
+                value_template: "{{ ausserhalb_modus == 'manuell' }}"
+            then:
+              - alias: Handbetrieb – Zustand merken
+                action: scene.create
+                data:
+                  scene_id: "{{ snapshot_id }}"
+                  snapshot_entities: "{{ [regler] }}"
           - action: climate.set_hvac_mode
             target:
               entity_id: !input regler
@@ -487,3 +512,23 @@ actions:
             data:
               hvac_mode: heat
               temperature: "{{ ziel_temp | float }}"
+
+  - alias: Handbetrieb – gemerkten Zustand zurückholen bzw. verwerfen
+    if:
+      - condition: template
+        value_template: >
+          {{ ausserhalb_modus == 'manuell'
+             and ziel_modus in ['heat', 'nichts']
+             and ziel_grund != 'Hauptschalter aus'
+             and snapshot_szene in states.scene | map(attribute='entity_id') | list }}
+    then:
+      - if:
+          - condition: template
+            value_template: "{{ ziel_modus == 'nichts' and states(regler) == 'off' }}"
+        then:
+          - action: scene.turn_on
+            target:
+              entity_id: "{{ snapshot_szene }}"
+      - action: scene.delete
+        target:
+          entity_id: "{{ snapshot_szene }}"

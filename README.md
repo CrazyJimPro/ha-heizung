@@ -7,7 +7,7 @@ Ein Blueprint, aus dem du **pro Raum eine Heizungs-Automation** anlegst. Alles w
 - Hauptschalter (z. B. „Heizmodus“)
 - Außentemperatur mit Grenzwert
 - bis zu **6 Zeitfenster**, jedes mit eigener Uhrzeit, eigenen Wochentagen und eigener Temperatur
-- Verhalten außerhalb der Zeitfenster: Regler aus oder Absenktemperatur
+- Verhalten außerhalb der Zeitfenster: Regler aus, Absenktemperatur oder nicht eingreifen (Handbetrieb)
 
 ## So entscheidet die Automation
 
@@ -19,9 +19,18 @@ Bei jedem Auslöser (Fenster auf/zu, Beginn oder Ende eines Zeitfensters, Außen
 | 2 | ein Fenster ist offen | Regler aus |
 | 3 | draußen ist es so warm wie der Grenzwert oder wärmer | Regler aus |
 | 4 | ein aktives Zeitfenster passt | heizen mit dessen Temperatur |
-| 5 | sonst | Regler aus oder Absenktemperatur |
+| 5 | sonst | Regler aus, Absenktemperatur oder nicht eingreifen |
 
 Geht das Fenster wieder zu, gilt sofort wieder, was der Zeitplan gerade vorsieht.
+
+### Handbetrieb („Nicht eingreifen“)
+
+Für Räume ohne festen Zeitplan, deren Regler du von Hand bedienst. Außerhalb der Zeitfenster (oder ganz ohne Zeitfenster) lässt die Automation den Regler in Ruhe. Nur Fenster, Hauptschalter und Außentemperatur greifen ein:
+
+- Geht ein Fenster auf, merkt sich die Automation Modus und Solltemperatur des Reglers und schaltet ihn aus.
+- Sind alle Fenster wieder zu, stellt sie den gemerkten Zustand wieder her.
+- Hast du den Regler in der Zwischenzeit selbst wieder eingeschaltet, bleibt deine Einstellung.
+- Der gemerkte Zustand übersteht keinen Neustart von Home Assistant. Wird HA neu gestartet, während das Fenster offen ist, bleibt der Regler danach aus.
 Der Regler bekommt nur dann einen Befehl, wenn sich Modus oder Solltemperatur wirklich ändern. Das schont die Batterien der Thermostate.
 
 ## Voraussetzungen
@@ -52,7 +61,7 @@ Der Regler bekommt nur dann einen Befehl, wenn sich Modus oder Solltemperatur wi
 3. Bereich **Hauptschalter**: den Heizmodus-Schalter wählen.
 4. Bereich **Außentemperatur**: Sensor wählen und den Grenzwert prüfen (Standard 20 °C).
 5. Bereiche **Zeitfenster 1–6**: Bei jedem gewünschten Zeitfenster **Aktiv** einschalten, dann Von, Bis, Wochentage und Temperatur eintragen. Nicht benutzte Zeitfenster bleiben aus.
-6. Bereich **Außerhalb der Zeitfenster**: „Regler ausschalten“ oder „Absenktemperatur halten“ wählen.
+6. Bereich **Außerhalb der Zeitfenster**: „Regler ausschalten“, „Absenktemperatur halten“ oder „Nicht eingreifen (Handbetrieb)“ wählen.
 7. **Speichern**. Einen Namen vergeben, z. B. „Heizung Schlafzimmer“.
 
 Für jeden weiteren Raum die Schritte 1–7 wiederholen.
