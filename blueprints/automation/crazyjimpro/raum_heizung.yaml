@@ -26,7 +26,11 @@ blueprint:
     schalten ihn trotzdem aus; danach wird der vorherige Zustand wiederhergestellt.
 
 
-    Version 1.1.0 – https://github.com/CrazyJimPro/ha-heizung
+    Anzeige im Dashboard (optional): Ist ein Text-Helfer gewählt, schreibt die
+    Automation ihre aktiven Zeitfenster hinein, damit eine Karte sie anzeigen kann.
+
+
+    Version 1.2.0 – https://github.com/CrazyJimPro/ha-heizung
   domain: automation
   author: CrazyJimPro
   source_url: https://github.com/CrazyJimPro/ha-heizung/blob/main/blueprints/automation/crazyjimpro/raum_heizung.yaml
@@ -296,6 +300,25 @@ blueprint:
               unit_of_measurement: "°C"
               mode: box
 
+    anzeige:
+      name: Anzeige im Dashboard
+      icon: mdi:view-dashboard-outline
+      collapsed: true
+      input:
+        plan_helfer:
+          name: Plan-Helfer (Text)
+          description: >
+            Optional. Ein Text-Helfer (input_text) mit maximaler Länge 255. Die
+            Automation schreibt die aktiven Zeitfenster hinein (bei jedem Lauf und
+            nach dem Speichern einer Automation), damit eine Dashboard-Karte zeigen
+            kann, wie lange noch bzw. ab wann geheizt wird. Leer lassen, wenn du das
+            nicht brauchst.
+          default: ""
+          selector:
+            entity:
+              filter:
+                - domain: input_text
+
 mode: restart
 max_exceeded: silent
 
@@ -316,6 +339,15 @@ variables:
   zf4_temp: !input zf4_temp
   zf5_temp: !input zf5_temp
   zf6_temp: !input zf6_temp
+  # Für die Anzeige im Dashboard (Plan-Helfer)
+  plan_helfer: !input plan_helfer
+  zeitfenster:
+    - [!input zf1_aktiv, !input zf1_start, !input zf1_ende, !input zf1_temp, !input zf1_tage]
+    - [!input zf2_aktiv, !input zf2_start, !input zf2_ende, !input zf2_temp, !input zf2_tage]
+    - [!input zf3_aktiv, !input zf3_start, !input zf3_ende, !input zf3_temp, !input zf3_tage]
+    - [!input zf4_aktiv, !input zf4_start, !input zf4_ende, !input zf4_temp, !input zf4_tage]
+    - [!input zf5_aktiv, !input zf5_start, !input zf5_ende, !input zf5_temp, !input zf5_tage]
+    - [!input zf6_aktiv, !input zf6_start, !input zf6_ende, !input zf6_temp, !input zf6_tage]
   # Wird in den Zweigen unten gesetzt: "off", "heat" oder "nichts"
   ziel_modus: nichts
   ziel_temp: 0
@@ -353,6 +385,9 @@ triggers:
   - trigger: homeassistant
     event: start
     id: ha_start
+  - trigger: event
+    event_type: automation_reloaded
+    id: neu_geladen
   - { trigger: time, at: !input zf1_start, enabled: !input zf1_aktiv, id: zf1_start }
   - { trigger: time, at: !input zf1_ende, enabled: !input zf1_aktiv, id: zf1_ende }
   - { trigger: time, at: !input zf2_start, enabled: !input zf2_aktiv, id: zf2_start }
@@ -369,6 +404,49 @@ triggers:
 conditions: []
 
 actions:
+  - alias: Zeitplan für die Anzeige in den Plan-Helfer schreiben
+    if:
+      - condition: template
+        value_template: >
+          {{ plan_helfer not in ['', none]
+             and plan_helfer in states.input_text | map(attribute='entity_id') | list }}
+    then:
+      - variables:
+          # Format: [[von_min, bis_min, temp, [wochentage 0=Mo]], ...]
+          plan: >
+            {%- set namen = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] -%}
+            {%- set ns = namespace(p=[]) -%}
+            {%- for z in zeitfenster if z[0] -%}
+              {%- set v = z[1].split(':') -%}
+              {%- set b = z[2].split(':') -%}
+              {%- set t = z[3] | float -%}
+              {%- set tage = namespace(l=[]) -%}
+              {%- for i in range(7) if namen[i] in z[4] -%}
+                {%- set tage.l = tage.l + [i] -%}
+              {%- endfor -%}
+              {%- set ns.p = ns.p + [[v[0] | int * 60 + v[1] | int,
+                                      b[0] | int * 60 + b[1] | int,
+                                      t if t % 1 else t | int,
+                                      tage.l]] -%}
+            {%- endfor -%}
+            {{ ns.p | to_json }}
+      - if:
+          - condition: template
+            value_template: >
+              {%- set text = plan | to_json -%}
+              {{ states(plan_helfer) != text
+                 and text | length <= state_attr(plan_helfer, 'max') | int(100) }}
+        then:
+          - action: input_text.set_value
+            target:
+              entity_id: "{{ plan_helfer }}"
+            data:
+              value: "{{ plan | to_json }}"
+
+  - alias: Nach dem Speichern einer Automation nur den Plan aktualisieren
+    condition: template
+    value_template: "{{ trigger.id != 'neu_geladen' }}"
+
   - alias: Sollzustand bestimmen
     choose:
       - alias: Hauptschalter aus

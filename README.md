@@ -8,6 +8,7 @@ Ein Blueprint, aus dem du **pro Raum eine Heizungs-Automation** anlegst. Alles w
 - Außentemperatur mit Grenzwert
 - bis zu **6 Zeitfenster**, jedes mit eigener Uhrzeit, eigenen Wochentagen und eigener Temperatur
 - Verhalten außerhalb der Zeitfenster: Regler aus, Absenktemperatur oder nicht eingreifen (Handbetrieb)
+- optional: Zeitplan für eine Dashboard-Anzeige in einen Text-Helfer schreiben („heizt noch 2 h“, „ab 17:00 auf 23 °C“)
 
 ## So entscheidet die Automation
 
@@ -62,9 +63,22 @@ Der Regler bekommt nur dann einen Befehl, wenn sich Modus oder Solltemperatur wi
 4. Bereich **Außentemperatur**: Sensor wählen und den Grenzwert prüfen (Standard 20 °C).
 5. Bereiche **Zeitfenster 1–6**: Bei jedem gewünschten Zeitfenster **Aktiv** einschalten, dann Von, Bis, Wochentage und Temperatur eintragen. Nicht benutzte Zeitfenster bleiben aus.
 6. Bereich **Außerhalb der Zeitfenster**: „Regler ausschalten“, „Absenktemperatur halten“ oder „Nicht eingreifen (Handbetrieb)“ wählen.
-7. **Speichern**. Einen Namen vergeben, z. B. „Heizung Schlafzimmer“.
+7. Optional, Bereich **Anzeige im Dashboard**: einen Text-Helfer wählen (siehe nächster Abschnitt).
+8. **Speichern**. Einen Namen vergeben, z. B. „Heizung Schlafzimmer“.
 
-Für jeden weiteren Raum die Schritte 1–7 wiederholen.
+Für jeden weiteren Raum die Schritte 1–8 wiederholen.
+
+## Zeitplan im Dashboard anzeigen (optional)
+
+Ein Dashboard kann die Einstellungen einer Automation nicht lesen. Damit eine Karte trotzdem zeigen kann, wie lange ein Raum noch heizt oder ab wann er heizt, schreibt die Automation ihre aktiven Zeitfenster in einen Text-Helfer.
+
+1. **Einstellungen → Geräte & Dienste → Helfer → Helfer erstellen → Text**.
+2. Name z. B. „Heizplan Schlafzimmer“, **Maximale Länge** auf **255** stellen, erstellen.
+3. Die Automation des Raums öffnen, im Bereich **Anzeige im Dashboard** diesen Helfer wählen, speichern.
+
+Der Helfer wird sofort nach dem Speichern gefüllt und danach bei jedem Lauf aktuell gehalten. Er enthält eine Liste im Format `[[von, bis, temperatur, [wochentage]], …]`: Von und Bis in Minuten ab Mitternacht, Wochentage als Zahlen (0 = Montag … 6 = Sonntag). Beispiel: `[[1035,1170,25,[0,1,2,3,4,5,6]]]` heißt täglich 17:15–19:30 mit 25 °C. Bei einem Zeitfenster über Mitternacht ist Bis kleiner als Von.
+
+Eine Karte liest den Plan mit `states('input_text.heizplan_schlafzimmer') | from_json`.
 
 ### Hinweise zu den Zeitfenstern
 
@@ -83,6 +97,7 @@ Für jeden weiteren Raum die Schritte 1–7 wiederholen.
 - **Was hat die Automation gemacht?** Die Automation öffnen, oben rechts das Drei-Punkte-Menü → **Traces**. Dort steht, welcher Auslöser kam und welche Regel gegriffen hat (z. B. „Fenster offen“ oder „Zeitfenster 2“).
 - **Heizung geht gar nicht an**: Ist der Hauptschalter an? Ist es draußen wärmer als der Grenzwert? Ist beim passenden Zeitfenster **Aktiv** eingeschaltet und stimmen die Wochentage?
 - **Zwei Automationen steuern denselben Regler**: Alte Fenster-Automationen, Zeitpläne (z. B. Scheduler-Karten) oder Test-Automationen für denselben Raum ausschalten. Sonst überschreiben sie sich gegenseitig.
+- **Plan-Helfer bleibt leer**: Ist beim Helfer die maximale Länge auf 255 gestellt? Bei der Standardlänge 100 passen nur zwei bis drei Zeitfenster hinein, dann schreibt die Automation nichts.
 - **Fehlermeldungen**: **Einstellungen → System → Protokolle**, nach `automation` oder dem Namen der Automation filtern.
 
 ## Lizenz
