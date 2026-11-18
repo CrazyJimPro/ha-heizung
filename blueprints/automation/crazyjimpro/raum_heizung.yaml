@@ -18,6 +18,9 @@ blueprint:
 
     Wenn das Fenster wieder zu ist, gilt sofort wieder, was der Zeitplan vorsieht.
     Befehle werden nur geschickt, wenn sich am Regler wirklich etwas ändert.
+    Ausnahme: Geht ein Fenster auf, wird der Hauptschalter umgestellt oder wird es
+    draußen warm, geht „aus“ immer raus – auch wenn der Regler schon „aus“ meldet.
+    So bleibt er nicht an, wenn er einen Befehl kurz davor noch nicht bestätigt hat.
     Ist die Außentemperatur nicht verfügbar, wird nach Zeitplan geheizt.
 
 
@@ -30,7 +33,7 @@ blueprint:
     Automation ihre aktiven Zeitfenster hinein, damit eine Karte sie anzeigen kann.
 
 
-    Version 1.2.0 – https://github.com/CrazyJimPro/ha-heizung
+    Version 1.2.1 – https://github.com/CrazyJimPro/ha-heizung
   domain: automation
   author: CrazyJimPro
   source_url: https://github.com/CrazyJimPro/ha-heizung/blob/main/blueprints/automation/crazyjimpro/raum_heizung.yaml
@@ -558,12 +561,19 @@ actions:
     choose:
       - alias: Ausschalten
         conditions:
+          # Bei Fenster auf, Hauptschalter und Außentemperatur "aus" immer senden:
+          # Der Regler meldet einen kurz davor geschickten Heizbefehl oft erst
+          # nach einigen Sekunden; "off" in states() wäre dann veraltet.
           - condition: template
-            value_template: "{{ ziel_modus == 'off' and states(regler) != 'off' }}"
+            value_template: >
+              {{ ziel_modus == 'off' and (
+                   states(regler) != 'off'
+                   or trigger.id in ['fenster_auf', 'hauptschalter', 'aussen_warm']
+                 ) }}
         sequence:
           - if:
               - condition: template
-                value_template: "{{ ausserhalb_modus == 'manuell' }}"
+                value_template: "{{ ausserhalb_modus == 'manuell' and states(regler) != 'off' }}"
             then:
               - alias: Handbetrieb – Zustand merken
                 action: scene.create
